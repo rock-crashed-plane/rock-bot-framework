@@ -18,6 +18,7 @@ Or die!
 
 import telnetlib
 import time
+import re
 
 #### Start Configuration ###############################
 
@@ -25,7 +26,7 @@ user = ''
 password = ''
 
 # Take a breather if no npcs are in the room and hp below this threshold.
-hp_thresh = 1200
+hp_thresh = 2000
 
 # Default amount of time to sleep.
 # Sleep commands are sprinkled throughout the code.
@@ -35,6 +36,8 @@ sleep_duration = .5
 loot_thresh = 250
 
 #### End Configuration ###############################
+
+ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 
 def sleep(duration=None):
 
@@ -47,7 +50,7 @@ def sleep(duration=None):
     if duration == None:
         time.sleep(sleep_duration)
     else:
-        time.sleep(sleep_duration)
+        time.sleep(duration)
 
 def read():
 
@@ -73,7 +76,20 @@ def send_command(command=None):
         tn.write(command.encode('ascii') + b"\n")
 
     sleep()
-    return read()
+
+    ansi_reply = read()
+    plain_reply = ansi_escape.sub('', ansi_reply)
+
+    return plain_reply, ansi_reply
+
+def sc(command=None):
+
+    if command == None:
+        plain_reply, ansi_reply = send_command()
+    else:
+        plain_reply, ansi_reply = send_command(command)
+
+    print(ansi_reply)
 
 def login():
 
@@ -83,23 +99,25 @@ def login():
 
     """
 
-    time.sleep(2)
+    sleep()
 
-    reply = read()
+    plain_reply, ansi_reply = send_command('')
 
-    if '[E]nter Realm' in reply:
-        reply = send_command('E')
-        print(reply)
+    if '[E]nter Realm' in plain_reply:
+        plain_reply, ansi_reply = send_command('E')
+        print(ansi_reply)
 
-    if 'What is your fuzzem.com UserID' in reply:
-        reply = send_command(user)
-        print(reply)
+    if 'What is your fuzzem.com UserID' in plain_reply:
+        plain_reply, ansi_reply = send_command(user)
+        print(ansi_reply)
 
-    if 'password' in reply:
-        reply = send_command(password)
-        print(reply)
+    if 'password' in plain_reply:
+        plain_reply, ansi_reply = send_command(password)
+        print(ansi_reply)
 
-    time.sleep(3)
+    sc()
+
+    sleep()
 
 def kill_scientist():
 
@@ -109,24 +127,25 @@ def kill_scientist():
 
     """
 
-    reply = send_command()
-    reply = reply.split('\r\n')
+    plain_reply, ansi_reply = send_command()
+
+    plain_reply = plain_reply.split('\r\n')
 
     killed = False
 
-    for row in reply:
+    for row in plain_reply:
 
         if 'NPCs in room' in row:
 
             first_npc = row.replace('.','').split(': ')[1].split(', ')[0]
 
             k = 'kill ' + first_npc
-            reply = send_command(k)
-            print(reply)
+            plain_reply, ansi_reply = send_command(k)
+            print(ansi_reply)
 
-            if 'flask of iridescent liquid' in reply:
-                reply = send_command('get flask of iridescent liquid')
-                print(reply)
+            if 'iridescent' in plain_reply:
+                plain_reply, ansi_reply = send_command('get flask of iridescent liquid')
+                print(ansi_reply)
 
             killed = True
 
@@ -148,11 +167,13 @@ def kill_scientists():
 
     while npcs:
 
-        reply = send_command()
-        reply = reply.split('\r\n')
+        plain_reply, ansi_reply = send_command()
+        plain_reply = plain_reply.split('\r\n')
 
         found_npcs = False
-        for row in reply:
+
+        for row in plain_reply:
+
             if 'NPCs in room' in row:
                 found_npcs = True
 
@@ -163,46 +184,49 @@ def kill_scientists():
 
 def move(dir):
 
-    reply = send_command(dir)
-    print(reply)
+    plain_reply, ansi_reply = send_command(dir)
+    print(ansi_reply)
 
 def look():
 
-    reply = send_command()
-    print(reply)
-    return reply
+    plain_reply, ansi_reply = send_command()
+    print(ansi_reply)
 
 def inv():
 
-    reply = send_command('i')
-    print(reply)
+    sc('i')
 
 def loot():
 
     """
+
     Gets cryl in room if over loot_thresh
+
     """
 
-    reply = send_command()
-    reply = reply.replace('\r\n','').replace('  ',' ').replace('  ',' ')
-    reply = reply.split('cryl.')
+    plain_reply, ansi_reply = send_command()
+    plain_reply = plain_reply.replace('\r\n','').replace('  ',' ').replace('  ',' ')
+    plain_reply = plain_reply.split('cryl.')
 
-    if len(reply) > 1:
-        reply = reply[0]
-        reply.strip()
-        reply = reply.split(' ')
-        reply = [i for i in reply if not i == '']
-        cryl = int(reply[-1])
+    if len(plain_reply) > 1:
+        plain_reply = plain_reply[0]
+        plain_reply.strip()
+        plain_reply = plain_reply.split(' ')
+        plain_reply = [i for i in plain_reply if not i == '']
 
-        if cryl > loot_thresh:
+        try:
+            cryl = int(plain_reply[-1])
 
-            reply = send_command('loot')
-            print(reply)
+            if cryl > loot_thresh:
+
+                sc('loot')
+
+        except:
+            pass
 
 def exit():
 
-    reply = send_command('exit')
-    print(reply)
+    sc('exit')
 
 def get_prompt():
 
@@ -220,21 +244,25 @@ def get_prompt():
 
     def gp():
 
-        reply = send_command()
-        reply = reply.split('\r\n')
-        reply = [i for i in reply if len(i)]
-        reply = [i for i in reply if i[0] == '>']
+        plain_reply, ansi_reply = send_command()
+        plain_reply = plain_reply.split('\r\n')
+        plain_reply = [i for i in plain_reply if len(i)]
+        plain_reply = [i for i in plain_reply if i[0] == '>']
 
-        if len(reply):
-            return reply[-1]
+        if len(plain_reply):
+            return plain_reply[-1]
         else:
             return False
 
     reply = gp()
 
-    # Try a second time if needed.
-    if not reply:
+    # Try until we get a prompt
+
+    while not reply:
+
         reply = gp()
+
+        print(reply)
 
     return reply
 
@@ -242,7 +270,7 @@ def cur_hp():
 
     """
 
-    Returns an integer with your current number of turns.
+    Returns an integer with your current number of hit points.
 
     """
 
@@ -270,9 +298,9 @@ def check_for_npcs():
 
     """
 
-    reply = send_command()
+    plain_reply, ansi_reply = send_command()
     
-    npc_text = [row for row in reply.split('\r\n') if 'NPCs in room' in row]
+    npc_text = [row for row in plain_reply.split('\r\n') if 'NPCs in room' in row]
 
     if len(npc_text) == 0:
         return False
@@ -299,8 +327,8 @@ def rest():
 
             if not check_for_npcs():
 
-                reply = send_command('rest')
-                print(reply)
+
+                sc('rest')
 
                 hp = cur_hp()
 
@@ -310,6 +338,38 @@ def rest():
             sleep()
 
     sleep()
+
+def get_items_in_room():
+
+    plain_reply, ansi_reply = send_command()
+    plain_reply = plain_reply.split('\r\n')
+
+    index = [idx for idx, s in enumerate(plain_reply) if 'Items in room:' in s]
+
+    if len(index) > 0:
+
+        # Get last occurence of Items in room:
+
+        index = index[-1]
+
+        return ''.join(plain_reply[index:])  \
+                 .replace('  ','')           \
+                 .split('.')[0]              \
+                 .split(':')[1]              \
+                 .strip()                    \
+                 .replace(', ',',')          \
+                 .split(',')
+
+    else:
+        return []
+
+def get_all_item(item_name):
+
+    for item in get_items_in_room():
+
+        if item_name in item:
+
+            sc('get ' + item)
 
 def troitian_lab_bot_tick():
 
@@ -324,7 +384,7 @@ def troitian_lab_bot_tick():
 
     If an NPC spawns while resting after fighting, the NPC will be ignored.
 
-    """    
+    """
 
     # If we are out of turns, exit the game.
     if cur_turns() < 100: exit()
@@ -337,6 +397,9 @@ def troitian_lab_bot_tick():
 
     # Get cryl if there is more cryl than loot_thresh.
     loot()
+
+    # Extra get iridescent vial
+    get_all_item('iridescent')
 
     # Take a breather until hp over hp_thresh.
     re()
@@ -411,9 +474,9 @@ Run the bot.
 
 # Establish a telnet connection
 tn = telnetlib.Telnet("rock.fuzzem.com", port=4000)
-
+p
 # Log in with your provided username and password in the top configuration.
-login() 
+login()
 
 # Run your bot
 troitian_lab_bot()
