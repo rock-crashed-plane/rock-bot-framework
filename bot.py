@@ -474,7 +474,7 @@ Run the bot.
 
 # Establish a telnet connection
 tn = telnetlib.Telnet("rock.fuzzem.com", port=4000)
-p
+
 # Log in with your provided username and password in the top configuration.
 login()
 
