@@ -209,6 +209,7 @@ def loot():
     plain_reply = plain_reply.split('cryl.')
 
     if len(plain_reply) > 1:
+
         plain_reply = plain_reply[0]
         plain_reply.strip()
         plain_reply = plain_reply.split(' ')
@@ -274,8 +275,20 @@ def cur_hp():
 
     """
 
-    reply = get_prompt()
-    hp = int(reply.split(' ')[0].replace('>','').split('/')[0])
+    got_hp = False
+
+    while not got_hp:
+
+        try:
+
+            reply = get_prompt()
+            hp = int(reply.split(' ')[0].replace('>','').split('/')[0])
+            got_hp = True
+
+        except:
+
+            continue
+
     return hp
 
 def cur_turns():
@@ -286,8 +299,20 @@ def cur_turns():
 
     """
 
-    reply = get_prompt()
-    turns = int(reply.split(' ')[3])
+    got_turns = False
+
+    while not got_turns:
+
+        try:
+
+            reply = get_prompt()
+            turns = int(reply.split(' ')[3])
+            got_turns = True
+
+        except:
+
+            continue
+
     return turns
 
 def check_for_npcs():
