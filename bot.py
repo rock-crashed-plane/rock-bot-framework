@@ -2,12 +2,6 @@
 
 Simple bot framework for the Rock: Crashed Plane (fuzzem.com) MUD.
 
-It supports running laps while killing NPCs, collecting loot, etc, in a loop.
-
-This framework has no mapping ability.
-
-Make sure the character starts in the right room.
-
 Beware THE UNKNOWN. Beware exhaustion.
 
 Your bot could smack into walls until he runs out of turns.
@@ -16,17 +10,31 @@ Or die!
 
 """
 
+from random import random, randint
+import datefinder
 import telnetlib
+import datetime
 import time
+import sys
 import re
 
 #### Start Configuration ###############################
 
-user = ''
-password = ''
+# You can either provide the username and password on the command line:
+#
+# python bot.py myusername mypassword
+#
+# Or you can hard code them into the script here, in the except clause.
 
-# Take a breather if no npcs are in the room and hp below this threshold.
-hp_thresh = 2000
+try:
+    user = sys.argv[1]
+    password = sys.argv[2]
+except:
+    user = ''
+    password = ''
+
+# Take a breather if no npcs are in the room and hp below this percentage
+hp_thresh = 70
 
 # Default amount of time to sleep.
 # Sleep commands are sprinkled throughout the code.
@@ -51,6 +59,14 @@ def sleep(duration=None):
         time.sleep(sleep_duration)
     else:
         time.sleep(duration)
+
+def random_sleep():
+    rnd = random()*3
+
+    if rnd > .5:
+        sleep(rnd)
+    else:
+        sleep(.5)
 
 def read():
 
@@ -118,69 +134,6 @@ def login():
     sc()
 
     sleep()
-
-def kill_scientist():
-
-    """
-
-    Kill the first scientist in a room in the troitian lab.
-
-    """
-
-    plain_reply, ansi_reply = send_command()
-
-    plain_reply = plain_reply.split('\r\n')
-
-    killed = False
-
-    for row in plain_reply:
-
-        if 'NPCs in room' in row:
-
-            first_npc = row.replace('.','').split(': ')[1].split(', ')[0]
-
-            k = 'kill ' + first_npc
-            plain_reply, ansi_reply = send_command(k)
-            print(ansi_reply)
-
-            if 'iridescent' in plain_reply:
-                plain_reply, ansi_reply = send_command('get flask of iridescent liquid')
-                print(ansi_reply)
-
-            killed = True
-
-    sleep()
-
-    return killed
-
-def kill_scientists():
-
-    """
-
-    Kill all scientists in a room in the troitian lab.
-
-    Assumes you have enough HP to kill them all.
-
-    """
-
-    npcs = True
-
-    while npcs:
-
-        plain_reply, ansi_reply = send_command()
-        plain_reply = plain_reply.split('\r\n')
-
-        found_npcs = False
-
-        for row in plain_reply:
-
-            if 'NPCs in room' in row:
-                found_npcs = True
-
-        if found_npcs:
-            kill_scientist()
-        else:
-            npcs = False
 
 def move(dir):
 
@@ -291,6 +244,29 @@ def cur_hp():
 
     return hp
 
+def cur_hp_percent():
+    """
+
+    Returns an integer with your current percentage of hit points 
+
+    """    
+
+    got_hp_percent = False
+
+    while not got_hp_percent:
+
+        try:
+
+            reply = get_prompt()
+            hp_percent = int(reply.split(' ')[1].replace('%',''))
+            got_hp_percent = True
+
+        except:
+
+            continue
+
+    return hp_percent
+
 def cur_turns():
 
     """
@@ -324,13 +300,35 @@ def check_for_npcs():
     """
 
     plain_reply, ansi_reply = send_command()
-    
+
     npc_text = [row for row in plain_reply.split('\r\n') if 'NPCs in room' in row]
 
     if len(npc_text) == 0:
         return False
     else:
         return True
+
+def check_for_npc(npc):
+
+    plain_reply, ansi_reply = send_command()
+    
+    npc_text = [row for row in plain_reply.split('\r\n') if 'NPCs in room' in row]
+
+    if len(npc_text) == 0:
+        return False
+
+    npc_text = npc_text[0]
+    npcs = npc_text.split(':')[1:]
+
+    npcs_clean = [npc.replace('.','').strip() for npc in npcs]
+
+    for npc in npcs_clean:
+
+        if npc in npcs_clean:
+
+            return True
+
+    return False
 
 def rest():
 
@@ -346,23 +344,42 @@ def rest():
 
     if not check_for_npcs():
 
-        hp = cur_hp()
+        hp_percent = cur_hp_percent()
 
-        while hp < hp_thresh:
+        while hp_percent < hp_thresh:
 
             if not check_for_npcs():
 
-
                 sc('rest')
 
-                hp = cur_hp()
+                hp_percent = cur_hp_percent()
 
             else:
+
                 break
 
             sleep()
 
-    sleep()
+def get_exits():
+
+    got_exits = False
+
+    while not got_exits:
+
+        try:
+
+            plain_reply, ansi_reply = send_command()
+
+            exits = [row for row in plain_reply.split('\r\n') if ' lie' in row][-1]
+            exits = exits.replace(', ',',').split(' ')[-1].replace('.','').split(',')
+
+            got_exits = True
+
+        except:
+
+            continue
+
+    return exits
 
 def get_items_in_room():
 
@@ -395,6 +412,123 @@ def get_all_item(item_name):
         if item_name in item:
 
             sc('get ' + item)
+
+def seconds_until_spawn(room):
+
+    plain_reply, ansi_reply = send_command('spawntimes')
+    plain_reply = plain_reply.split('\r\n')
+
+    entry = [i for i in plain_reply if room in i][0]
+    timstamp = entry.split('(')[0].strip().split(' ')[3]
+
+    spawn = list(datefinder.find_dates(timstamp))[0]
+
+    now = datetime.datetime.now()
+
+    return (spawn - now).seconds
+
+def kill_freresh():
+
+    time_to_sleep = seconds_until_spawn('Dissolved Hallucination')
+
+    def mins_left():
+        return int(str(int(str(time_to_sleep).split('.')[0]) / 60).split('.')[0])
+
+    while mins_left() > 0:
+        print("Freresh spawns in " + str(mins_left()) + " minutes.")
+
+        sleep(60)
+
+        time_to_sleep -= 60
+
+    sleep(time_to_sleep)
+
+    s(); sleep(2)
+    se();sleep(2)
+    se();sleep(2)
+
+    if not check_for_npc('Freresh'):
+        return False
+
+    sleep(5)
+    sc('kill freresh')
+    sleep(2)
+    sc('get crank')
+    sleep(2)
+
+    nw();sleep(2)
+    nw();sleep(2)
+    n()
+
+def kill_freresh_loop():
+
+    while True:
+
+        kill_freresh()
+
+
+def kill_scientist():
+
+    """
+
+    Kill the first scientist in a room in the troitian lab.
+
+    """
+
+    plain_reply, ansi_reply = send_command()
+
+    plain_reply = plain_reply.split('\r\n')
+
+    killed = False
+
+    for row in plain_reply:
+
+        if 'NPCs in room' in row:
+
+            first_npc = row.replace('.','').split(': ')[1].split(', ')[0]
+
+            k = 'kill ' + first_npc
+            plain_reply, ansi_reply = send_command(k)
+            print(ansi_reply)
+
+            if 'iridescent' in plain_reply:
+                plain_reply, ansi_reply = send_command('get flask of iridescent liquid')
+                print(ansi_reply)
+
+            killed = True
+
+    sleep()
+
+    return killed
+
+def kill_scientists():
+
+    """
+
+    Kill all scientists in a room in the troitian lab.
+
+    Assumes you have enough HP to kill them all.
+
+    """
+
+    npcs = True
+
+    while npcs:
+
+        plain_reply, ansi_reply = send_command()
+        plain_reply = plain_reply.split('\r\n')
+
+        found_npcs = False
+
+        for row in plain_reply:
+
+            if 'NPCs in room' in row:
+                found_npcs = True
+
+        if found_npcs:
+            kill_scientist()
+        else:
+            npcs = False
 
 def troitian_lab_bot_tick():
 
@@ -432,7 +566,34 @@ def troitian_lab_bot_tick():
     # Look at the room and print the output.
     l()
 
-def troitian_lab_bot():
+def troitian_lab_bot_move_random_direction():
+
+    exits = get_exits()
+
+    if exits == ['west', 'southeast', 'northeast', 'east']:
+        exits = ['southeast', 'northeast', 'east']
+
+    random_direction  = exits[randint(0, len(exits) - 1)]
+
+    move(random_direction)
+
+def troitian_lab_bot_random():
+
+    """
+
+    Run laps around troitian laboratory taking random exits.
+
+    Collects iridescent vials.
+
+    Exits the game if you run out of turns.
+
+    """
+
+    while True:
+        troitian_lab_bot_tick()
+        troitian_lab_bot_move_random_direction()
+
+def troitian_lab_bot_loop():
 
     """
 
@@ -442,28 +603,29 @@ def troitian_lab_bot():
 
     Assumes you start in ne corner of lab.
 
+    NOTE: If you run multiple characters in a loop, they will always end up
+    in the same room, even if you start them in different rooms.
+
     Exits the game if you run out of turns.
 
     """
 
-    def tick():
-        troitian_lab_bot_tick()
-
     while True:
-        tick();sw()
-        tick();s()
-        tick();s()
-        tick();sw()
-        tick();ne()
-        tick();nw()
-        tick();sw()
-        tick();nw()
-        tick();ne()
-        tick();s()
-        tick();e()
-        tick();n()
-        tick();e()
-        tick();ne()
+        troitian_lab_bot_tick();sw()
+        troitian_lab_bot_tick();s()
+        troitian_lab_bot_tick();s()
+        troitian_lab_bot_tick();sw()
+        troitian_lab_bot_tick();ne()
+        troitian_lab_bot_tick();nw()
+        troitian_lab_bot_tick();sw()
+        troitian_lab_bot_tick();n()
+        troitian_lab_bot_tick();n()
+        troitian_lab_bot_tick();s()
+        troitian_lab_bot_tick();e()
+        troitian_lab_bot_tick();n()
+        troitian_lab_bot_tick();e()
+        troitian_lab_bot_tick();ne()
+
 
 """
 
@@ -490,7 +652,6 @@ def se(): move('se')
 def nw(): move('nw')
 def sw(): move('sw')
 
-
 """
 
 Run the bot.
@@ -504,5 +665,5 @@ tn = telnetlib.Telnet("rock.fuzzem.com", port=4000)
 login()
 
 # Run your bot
-troitian_lab_bot()
+troitian_lab_bot_random()
 
