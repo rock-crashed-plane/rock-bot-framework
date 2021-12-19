@@ -1,3 +1,5 @@
+#!/usr/local/bin/python3.10
+
 """
 
 Simple bot framework for the Rock: Crashed Plane (fuzzem.com) MUD.
@@ -33,16 +35,15 @@ except:
     user = ''
     password = ''
 
-# Take a breather if no npcs are in the room and hp below this percentage
-hp_thresh = 70
 
-# Default amount of time to sleep.
-# Sleep commands are sprinkled throughout the code.
-sleep_duration = .5
+# Print lots of helpful debugging messages
+debug = False
 
-# Amount of cryl in room before loot is triggered.
-loot_thresh = 250
 
+# Flush colored text output more frequently
+flush = True
+
+    
 #### End Configuration ###############################
 
 ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
@@ -78,7 +79,7 @@ def read():
 
     return tn.read_very_eager().decode('ascii')
 
-def send_command(command=None):
+def send_command(command = None):
 
     """
 
@@ -87,25 +88,24 @@ def send_command(command=None):
     """
 
     if command == None:
-        tn.write(''.encode('ascii') + b"\n")
+        tn.write(''.encode('ascii') + b'\n')
     else:
-        tn.write(command.encode('ascii') + b"\n")
+        tn.write(command.encode('ascii') + b'\n')
 
-    sleep()
+def c(command = None):
 
-    ansi_reply = read()
+    if command == None:
+        send_command()
+    else:
+        send_command(command)
+
+def read_until(text = '> ', timeout = 10):
+
+    ansi_reply = tn.read_until(str.encode(text)).decode('utf-8')
+
     plain_reply = ansi_escape.sub('', ansi_reply)
 
     return plain_reply, ansi_reply
-
-def sc(command=None):
-
-    if command == None:
-        plain_reply, ansi_reply = send_command()
-    else:
-        plain_reply, ansi_reply = send_command(command)
-
-    print(ansi_reply)
 
 def login():
 
@@ -115,74 +115,80 @@ def login():
 
     """
 
-    sleep()
+    send_command('E')
 
-    plain_reply, ansi_reply = send_command('')
+    plain_reply, ansi_reply = read_until()
+    _ = tn.read_very_eager()
 
-    if '[E]nter Realm' in plain_reply:
-        plain_reply, ansi_reply = send_command('E')
-        print(ansi_reply)
+    print(ansi_reply)
 
-    if 'What is your fuzzem.com UserID' in plain_reply:
-        plain_reply, ansi_reply = send_command(user)
-        print(ansi_reply)
+    send_command(user)
 
-    if 'password' in plain_reply:
-        plain_reply, ansi_reply = send_command(password)
-        print(ansi_reply)
+    plain_reply, ansi_reply = read_until()
+    _ = tn.read_very_eager()
 
-    sc()
+    print(ansi_reply)
 
-    sleep()
+    send_command(password)
+
+    plain_reply, ansi_reply = read_until()
+    _ = tn.read_very_eager()
+
+    print(ansi_reply)
 
 def move(dir):
 
-    plain_reply, ansi_reply = send_command(dir)
+    _ = tn.read_very_eager()
+
+    c(dir)
+
+    plain_reply, ansi_reply = read_until()
+
+    _ = tn.read_very_eager()
+
     print(ansi_reply)
 
-def look():
+    while 'exhausted' in plain_reply:
 
-    plain_reply, ansi_reply = send_command()
-    print(ansi_reply)
+        print('Exhausted')
 
-def inv():
+        sleep(.5)
 
-    sc('i')
+        _ = tn.read_very_eager()
 
-def loot():
+        c(dir)
 
-    """
+        plain_reply, ansi_reply = read_until()
 
-    Gets cryl in room if over loot_thresh
+        _ = ansi_escape.sub('', tn.read_very_eager().decode('ascii'))
 
-    """
+    reply = plain_reply
 
-    plain_reply, ansi_reply = send_command()
-    plain_reply = plain_reply.replace('\r\n','').replace('  ',' ').replace('  ',' ')
-    plain_reply = plain_reply.split('cryl.')
+    for exit_condition in ['turns', 'You disintegrate into the ether']:
 
-    if len(plain_reply) > 1:
+        if exit_condition in reply:
 
-        plain_reply = plain_reply[0]
-        plain_reply.strip()
-        plain_reply = plain_reply.split(' ')
-        plain_reply = [i for i in plain_reply if not i == '']
+            _ = tn.read_very_eager()
 
-        try:
-            cryl = int(plain_reply[-1])
+            print(ansi_reply)
 
-            if cryl > loot_thresh:
+            print("Exit condition: " + exit_condition)
 
-                sc('loot')
+            exit()
 
-        except:
-            pass
+            plain_reply, ansi_reply = read_until()
+
+            _ = tn.read_very_eager()
+
+            print(ansi_reply)
+
+            sys.exit()
 
 def exit():
 
-    sc('exit')
+    c('exit')
 
-def get_prompt():
+def get_prompt(text=None):
 
     """
 
@@ -196,9 +202,20 @@ def get_prompt():
 
     """
 
-    def gp():
+    def gp(text=None):
 
-        plain_reply, ansi_reply = send_command()
+        if text == None:
+
+            _ = tn.read_very_eager()
+
+            c()
+
+            plain_reply, ansi_reply = read_until()
+
+        else:
+
+            plain_reply = text
+
         plain_reply = plain_reply.split('\r\n')
         plain_reply = [i for i in plain_reply if len(i)]
         plain_reply = [i for i in plain_reply if i[0] == '>']
@@ -208,48 +225,24 @@ def get_prompt():
         else:
             return False
 
-    reply = gp()
-
-    # Try until we get a prompt
+    if text == None:
+        reply = gp(text)
+    else:
+        reply = gp()
 
     while not reply:
 
         reply = gp()
 
-        print(reply)
-
     return reply
 
-def cur_hp():
+def cur_hp_percent(text=None):
 
-    """
-
-    Returns an integer with your current number of hit points.
-
-    """
-
-    got_hp = False
-
-    while not got_hp:
-
-        try:
-
-            reply = get_prompt()
-            hp = int(reply.split(' ')[0].replace('>','').split('/')[0])
-            got_hp = True
-
-        except:
-
-            continue
-
-    return hp
-
-def cur_hp_percent():
     """
 
     Returns an integer with your current percentage of hit points 
 
-    """    
+    """
 
     got_hp_percent = False
 
@@ -257,8 +250,13 @@ def cur_hp_percent():
 
         try:
 
-            reply = get_prompt()
+            if text == None:
+                reply = get_prompt()
+            else:
+                reply = text
+
             hp_percent = int(reply.split(' ')[1].replace('%',''))
+
             got_hp_percent = True
 
         except:
@@ -266,30 +264,6 @@ def cur_hp_percent():
             continue
 
     return hp_percent
-
-def cur_turns():
-
-    """
-
-    Returns an integer with your current number of turns
-
-    """
-
-    got_turns = False
-
-    while not got_turns:
-
-        try:
-
-            reply = get_prompt()
-            turns = int(reply.split(' ')[3])
-            got_turns = True
-
-        except:
-
-            continue
-
-    return turns
 
 def check_for_npcs():
 
@@ -299,7 +273,11 @@ def check_for_npcs():
 
     """
 
-    plain_reply, ansi_reply = send_command()
+    _ = tn.read_very_eager()
+
+    c()
+
+    plain_reply, ansi_reply = read_until()
 
     npc_text = [row for row in plain_reply.split('\r\n') if 'NPCs in room' in row]
 
@@ -307,28 +285,6 @@ def check_for_npcs():
         return False
     else:
         return True
-
-def check_for_npc(npc):
-
-    plain_reply, ansi_reply = send_command()
-    
-    npc_text = [row for row in plain_reply.split('\r\n') if 'NPCs in room' in row]
-
-    if len(npc_text) == 0:
-        return False
-
-    npc_text = npc_text[0]
-    npcs = npc_text.split(':')[1:]
-
-    npcs_clean = [npc.replace('.','').strip() for npc in npcs]
-
-    for npc in npcs_clean:
-
-        if npc in npcs_clean:
-
-            return True
-
-    return False
 
 def rest():
 
@@ -344,13 +300,11 @@ def rest():
 
     if not check_for_npcs():
 
-        hp_percent = cur_hp_percent()
-
-        while hp_percent < hp_thresh:
+        while cur_hp_percent() < hp_thresh:
 
             if not check_for_npcs():
 
-                sc('rest')
+                c('rest')
 
                 hp_percent = cur_hp_percent()
 
@@ -358,273 +312,255 @@ def rest():
 
                 break
 
-            sleep()
+    sleep(.5)
 
-def get_exits():
+def get_exits(text):
 
-    got_exits = False
+    text = text.split('\r\n')
 
-    while not got_exits:
+    for row in text:
 
-        try:
+        if 'An exit lies to the' in row:
 
-            plain_reply, ansi_reply = send_command()
+            row = row.split('An exit lies to the ')[1].strip().replace('.','')
 
-            exits = [row for row in plain_reply.split('\r\n') if ' lie' in row][-1]
-            exits = exits.replace(', ',',').split(' ')[-1].replace('.','').split(',')
+            return [row]
 
-            got_exits = True
+        if 'Exits lie to the' in row:
 
-        except:
+            row = row.split('Exits lie to the ')[-1].replace(', ',',').replace('.','').split(',')
 
-            continue
+            return row
 
-    return exits
+def get_room():
 
-def get_items_in_room():
+    _ = tn.read_very_eager()
+    c()
+    plain_reply, ansi_reply = read_until()
+    _ = tn.read_very_eager()
 
-    plain_reply, ansi_reply = send_command()
-    plain_reply = plain_reply.split('\r\n')
+    return plain_reply
 
-    index = [idx for idx, s in enumerate(plain_reply) if 'Items in room:' in s]
+def troitian_in_room():
 
-    if len(index) > 0:
+    possible_npcs = ['Skilled Scientist', 'Expert Chemist', 'Troitian Physicist']
 
-        # Get last occurence of Items in room:
+    if debug: print("********************<TROITIAN_IN_ROOM()>*********************")
 
-        index = index[-1]
+    room_text = get_room()
 
-        return ''.join(plain_reply[index:])  \
-                 .replace('  ','')           \
-                 .split('.')[0]              \
-                 .split(':')[1]              \
-                 .strip()                    \
-                 .replace(', ',',')          \
-                 .split(',')
-
-    else:
-        return []
-
-def get_all_item(item_name):
-
-    for item in get_items_in_room():
-
-        if item_name in item:
-
-            sc('get ' + item)
-
-def seconds_until_spawn(room):
-
-    plain_reply, ansi_reply = send_command('spawntimes')
-    plain_reply = plain_reply.split('\r\n')
-
-    entry = [i for i in plain_reply if room in i][0]
-    timstamp = entry.split('(')[0].strip().split(' ')[3]
-
-    spawn = list(datefinder.find_dates(timstamp))[0]
-
-    now = datetime.datetime.now()
-
-    return (spawn - now).seconds
-
-def kill_freresh():
-
-    time_to_sleep = seconds_until_spawn('Dissolved Hallucination')
-
-    def mins_left():
-        return int(str(int(str(time_to_sleep).split('.')[0]) / 60).split('.')[0])
-
-    while mins_left() > 0:
-        print("Freresh spawns in " + str(mins_left()) + " minutes.")
-
-        sleep(60)
-
-        time_to_sleep -= 60
-
-    sleep(time_to_sleep)
-
-    s(); sleep(2)
-    se();sleep(2)
-    se();sleep(2)
-
-    if not check_for_npc('Freresh'):
+    if 'No lifeforms here' in room_text:
         return False
 
-    sleep(5)
-    sc('kill freresh')
-    sleep(2)
-    sc('get crank')
-    sleep(2)
+    if debug: print("ROOM TEXT: " + room_text)
+    
+    first_troitian = False
 
-    nw();sleep(2)
-    nw();sleep(2)
-    n()
+    for troitian in possible_npcs:
 
-def kill_freresh_loop():
+        if troitian in room_text:
+
+            first_troitian = troitian
+
+            break
+
+    if debug: print("FIRST_TROITIAN: " + str(first_troitian))
+    if debug: print("********************</TROITIAN_IN_ROOM()>*********************")
+
+    return first_troitian
+
+debug = False
+
+def troitian_lab_bot():
+
+    sl = .7
 
     while True:
 
-        kill_freresh()
+        room_text = get_room()
 
+        if debug:
 
-def kill_scientist():
+            print("********************<ROOM TEXT>*********************")
+            print(room_text)
+            print("********************</ROOM TEXT>********************")
 
-    """
+        if 'irid' in room_text:
 
-    Kill the first scientist in a room in the troitian lab.
+            if debug: print("********************<GET IRID>********************")
 
-    """
+            _ = tn.read_very_eager()
 
-    plain_reply, ansi_reply = send_command()
+            c('get irid')
 
-    plain_reply = plain_reply.split('\r\n')
+            plain_reply, ansi_reply = read_until()
+            _ = tn.read_very_eager()
 
-    killed = False
-
-    for row in plain_reply:
-
-        if 'NPCs in room' in row:
-
-            first_npc = row.replace('.','').split(': ')[1].split(', ')[0]
-
-            k = 'kill ' + first_npc
-            plain_reply, ansi_reply = send_command(k)
             print(ansi_reply)
 
-            if 'iridescent' in plain_reply:
-                plain_reply, ansi_reply = send_command('get flask of iridescent liquid')
+            if flush: sys.stdout.flush()
+
+            sleep(sl)
+
+            if debug: print("********************</GET IRID>********************")
+
+        if debug: print("********************<GET ROOM TITLE>********************")
+
+        room_title = room_text.split('\r\n')[0].strip()
+
+        if debug: print("ROOM TITLE: " + room_title)
+        if debug: print("********************</GET ROOM TITLE>********************")
+
+
+        match room_title:
+
+            case 'Troitian Base, Sterile Hallway':
+                  
+                  e()
+                  sleep(sl)
+
+
+        if debug: print("********************<GET EXITS>********************")
+
+        exits = get_exits(room_text)
+
+        if debug: print("ROOM EXITS: " + str(exits))
+        if debug: print("********************</GET EXITS>********************")
+
+        match exits:
+
+            case ['southwest']:
+
+                  sw()
+                  sleep(sl)
+
+            case ['west', 'south', 'northeast']:
+
+                  s()
+                  sleep(sl)
+
+            case ['north', 'south']:
+
+                  s()
+                  sleep(sl)
+
+            case ['northwest', 'southwest', 'north']:
+
+                  sw()
+                  sleep(sl)
+
+            case ['northeast']:
+
+                  ne()
+                  sleep(sl)
+
+                  nw()
+                  sleep(sl)
+
+            case ['west', 'southwest', 'north', 'southeast']:
+
+                  sw()
+                  sleep(sl)
+
+            case ['northwest', 'north', 'northeast']:
+
+                  n()
+                  sleep(sl)
+
+            case ['west', 'north', 'south', 'east']:
+
+                  n()
+                  sleep(sl)
+
+            case ['southwest', 'south']:
+
+                  s()
+                  sleep(sl)
+
+                  e()
+                  sleep(sl)
+
+                  n()
+                  sleep(sl)
+
+            case ['south', 'east']:
+
+                  e()
+                  sleep(sl)
+
+                  ne()
+                  sleep(sl)
+
+        if debug: print("********************<FIRST CURRENT TROITIAN>********************")
+
+        current_troitian = troitian_in_room()
+
+        if debug: print("CURRENT TROITIAN: " + str(current_troitian))
+
+        if debug: print("********************</FIRST CURRENT TROITIAN>********************")
+
+        if debug: print("********************<WHILE KILL TROITIAN>********************")
+
+        while current_troitian:
+
+            if debug: print("********************<INNER KILL TROITIAN>********************")
+
+            _ = tn.read_very_eager()
+
+            c('k ' + current_troitian)
+
+            current_troitian = False
+
+            plain_reply, ansi_reply = read_until()
+            _ = tn.read_very_eager()
+
+            print(ansi_reply)
+
+            if flush: sys.stdout.flush()
+
+            sleep(sl)
+
+            if debug: print("********************</INNER KILL TROITIAN>********************")
+
+            if debug: print("********************<INNER CURRENT TROITIAN>********************")
+
+            current_troitian = troitian_in_room()
+
+            if debug: print("CURRENT TROITIAN: " + str(current_troitian))
+            if debug: print("********************</INNER CURRENT TROITIAN>********************")
+
+            if 'irid' in plain_reply:
+
+                if debug: print("********************<IRID DROP>********************")
+
+                _ = tn.read_very_eager()
+
+                c('get irid')
+
+                plain_reply, ansi_reply = read_until()
+                _ = tn.read_very_eager()
+
                 print(ansi_reply)
 
-            killed = True
+                if flush: sys.stdout.flush()
 
-    sleep()
+                sleep(sl)
+  
+                if debug: print("********************</IRID DROP>********************")
 
-    return killed
+        if debug: print("********************</WHILE KILL TROITIAN>********************")
 
-def kill_scientists():
+        if debug: print("********************<CHECK REST>********************")
 
-    """
+        if cur_hp_percent() < 70:
 
-    Kill all scientists in a room in the troitian lab.
+                  if debug: print("********************<REST>********************")
 
-    Assumes you have enough HP to kill them all.
+                  re()
 
-    """
+                  if debug: print("********************</REST>********************")
 
-    npcs = True
-
-    while npcs:
-
-        plain_reply, ansi_reply = send_command()
-        plain_reply = plain_reply.split('\r\n')
-
-        found_npcs = False
-
-        for row in plain_reply:
-
-            if 'NPCs in room' in row:
-                found_npcs = True
-
-        if found_npcs:
-            kill_scientist()
-        else:
-            npcs = False
-
-def troitian_lab_bot_tick():
-
-    """
-
-    Kill all NPCs in a room of the troitian lab, and rest.
-
-    - Check that we have enough turns.
-    - Rest until above the HP threshold set in the config.
-    - Kill all scientists in the room.
-    - Rest until above the HP threshold set in the config.
-
-    If an NPC spawns while resting after fighting, the NPC will be ignored.
-
-    """
-
-    # If we are out of turns, exit the game.
-    if cur_turns() < 100: exit()
-
-    # Take a breather until hp over hp_thresh.
-    re()
-
-    # Kill all npcs (or die trying)
-    kill_scientists()
-
-    # Get cryl if there is more cryl than loot_thresh.
-    loot()
-
-    # Extra get iridescent vial
-    get_all_item('iridescent')
-
-    # Take a breather until hp over hp_thresh.
-    re()
-
-    # Look at the room and print the output.
-    l()
-
-def troitian_lab_bot_move_random_direction():
-
-    exits = get_exits()
-
-    if exits == ['west', 'southeast', 'northeast', 'east']:
-        exits = ['southeast', 'northeast', 'east']
-
-    random_direction  = exits[randint(0, len(exits) - 1)]
-
-    move(random_direction)
-
-def troitian_lab_bot_random():
-
-    """
-
-    Run laps around troitian laboratory taking random exits.
-
-    Collects iridescent vials.
-
-    Exits the game if you run out of turns.
-
-    """
-
-    while True:
-        troitian_lab_bot_tick()
-        troitian_lab_bot_move_random_direction()
-
-def troitian_lab_bot_loop():
-
-    """
-
-    Run laps around troitian laboratory.
-
-    Collects iridescent vials.
-
-    Assumes you start in ne corner of lab.
-
-    NOTE: If you run multiple characters in a loop, they will always end up
-    in the same room, even if you start them in different rooms.
-
-    Exits the game if you run out of turns.
-
-    """
-
-    while True:
-        troitian_lab_bot_tick();sw()
-        troitian_lab_bot_tick();s()
-        troitian_lab_bot_tick();s()
-        troitian_lab_bot_tick();sw()
-        troitian_lab_bot_tick();ne()
-        troitian_lab_bot_tick();nw()
-        troitian_lab_bot_tick();sw()
-        troitian_lab_bot_tick();n()
-        troitian_lab_bot_tick();n()
-        troitian_lab_bot_tick();s()
-        troitian_lab_bot_tick();e()
-        troitian_lab_bot_tick();n()
-        troitian_lab_bot_tick();e()
-        troitian_lab_bot_tick();ne()
+        if debug: print("********************</CHECK REST>********************")
 
 
 """
@@ -658,12 +594,8 @@ Run the bot.
 
 """
 
-# Establish a telnet connection
 tn = telnetlib.Telnet("rock.fuzzem.com", port=4000)
 
-# Log in with your provided username and password in the top configuration.
 login()
 
-# Run your bot
-troitian_lab_bot_random()
-
+troitian_lab_bot()
