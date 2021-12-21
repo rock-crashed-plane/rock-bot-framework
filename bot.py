@@ -35,6 +35,9 @@ except:
     user = ''
     password = ''
 
+hp_thresh = 70
+
+sl = .7
 
 # Print lots of helpful debugging messages
 debug = False
@@ -369,29 +372,17 @@ def troitian_in_room():
 
     return first_troitian
 
-debug = False
+def get_loot(room_text):
 
-def troitian_lab_bot():
+    if debug: print("********************<GET IRID>********************")
 
-    sl = .7
+    _ = tn.read_very_eager()
 
-    while True:
+    for item in ['irid', 'cloak', 'baf', 'form']:
 
-        room_text = get_room()
+        if item in room_text:
 
-        if debug:
-
-            print("********************<ROOM TEXT>*********************")
-            print(room_text)
-            print("********************</ROOM TEXT>********************")
-
-        if 'irid' in room_text:
-
-            if debug: print("********************<GET IRID>********************")
-
-            _ = tn.read_very_eager()
-
-            c('get irid')
+            c('get ' + item)
 
             plain_reply, ansi_reply = read_until()
             _ = tn.read_very_eager()
@@ -404,6 +395,76 @@ def troitian_lab_bot():
 
             if debug: print("********************</GET IRID>********************")
 
+def drop_inv():
+
+    _ = tn.read_very_eager()
+
+    c('i')
+
+    plain_reply, ansi_reply = read_until()
+    _ = tn.read_very_eager()
+
+    plain_reply = plain_reply.split('\r\n')
+
+    plain_reply = [i for i in plain_reply if 'You are carrying' in i]
+
+    plain_reply = plain_reply[0].split(':')[1]
+
+    plain_reply = plain_reply.split(',')
+
+    plain_reply_clean = []
+
+    for i in plain_reply:
+
+        if 'cryl' in i:
+            continue
+
+        i = i.replace('(r)','').replace('(c)','').replace('(u)','').replace('(m)','').replace('(l)','')
+
+        i = i.replace('  ',' ')
+
+        i = i.strip()
+
+        i = i.replace('.','')
+
+        plain_reply_clean.append(i)
+
+    for i in plain_reply_clean:
+
+        try:
+            n = int(i[0])
+        except:
+            n = 1
+
+        i = ''.join([j for j in i if not j.isdigit()])
+
+        i = i.strip()
+
+        for j in range(n):
+
+            _ = tn.read_very_eager()
+
+            c('drop ' + i)
+
+            plain_reply, ansi_reply = read_until()
+            _ = tn.read_very_eager()
+
+            print(ansi_reply)
+
+debug = False
+
+def troitian_lab_bot():
+
+    while True:
+
+        room_text = get_room()
+
+        if debug:
+
+            print("********************<ROOM TEXT>*********************")
+            print(room_text)
+            print("********************</ROOM TEXT>********************")
+
         if debug: print("********************<GET ROOM TITLE>********************")
 
         room_title = room_text.split('\r\n')[0].strip()
@@ -415,10 +476,10 @@ def troitian_lab_bot():
         match room_title:
 
             case 'Troitian Base, Sterile Hallway':
-                  
+
+                  drop_inv()
                   e()
                   sleep(sl)
-
 
         if debug: print("********************<GET EXITS>********************")
 
@@ -431,26 +492,32 @@ def troitian_lab_bot():
 
             case ['southwest']:
 
+                  get_loot(room_text)
                   sw()
                   sleep(sl)
+                  
 
             case ['west', 'south', 'northeast']:
 
+                  get_loot(room_text)
                   s()
                   sleep(sl)
 
             case ['north', 'south']:
 
+                  get_loot(room_text)
                   s()
                   sleep(sl)
 
             case ['northwest', 'southwest', 'north']:
 
+                  get_loot(room_text)
                   sw()
                   sleep(sl)
 
             case ['northeast']:
 
+                  get_loot(room_text)
                   ne()
                   sleep(sl)
 
@@ -459,21 +526,25 @@ def troitian_lab_bot():
 
             case ['west', 'southwest', 'north', 'southeast']:
 
+                  get_loot(room_text)
                   sw()
                   sleep(sl)
 
             case ['northwest', 'north', 'northeast']:
 
-                  n()
+                  get_loot(room_text)
+                  nw()
                   sleep(sl)
 
             case ['west', 'north', 'south', 'east']:
 
+                  get_loot(room_text)
                   n()
                   sleep(sl)
 
             case ['southwest', 'south']:
 
+                  get_loot(room_text)
                   s()
                   sleep(sl)
 
@@ -485,6 +556,7 @@ def troitian_lab_bot():
 
             case ['south', 'east']:
 
+                  get_loot(room_text)
                   e()
                   sleep(sl)
 
@@ -529,30 +601,11 @@ def troitian_lab_bot():
             if debug: print("CURRENT TROITIAN: " + str(current_troitian))
             if debug: print("********************</INNER CURRENT TROITIAN>********************")
 
-            if 'irid' in plain_reply:
-
-                if debug: print("********************<IRID DROP>********************")
-
-                _ = tn.read_very_eager()
-
-                c('get irid')
-
-                plain_reply, ansi_reply = read_until()
-                _ = tn.read_very_eager()
-
-                print(ansi_reply)
-
-                if flush: sys.stdout.flush()
-
-                sleep(sl)
-  
-                if debug: print("********************</IRID DROP>********************")
-
         if debug: print("********************</WHILE KILL TROITIAN>********************")
 
         if debug: print("********************<CHECK REST>********************")
 
-        if cur_hp_percent() < 70:
+        if cur_hp_percent() < hp_thresh:
 
                   if debug: print("********************<REST>********************")
 
@@ -561,7 +614,6 @@ def troitian_lab_bot():
                   if debug: print("********************</REST>********************")
 
         if debug: print("********************</CHECK REST>********************")
-
 
 """
 
@@ -575,7 +627,6 @@ terminal (useful for testing your bot), and to make your code more legible.
 def ks():   kill_scientists()
 def re():   rest()
 def m(dir): move(dir)
-def l():    look()
 
 def u():  move('u')
 def d():  move('d')
